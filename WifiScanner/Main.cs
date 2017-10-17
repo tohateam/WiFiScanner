@@ -16,6 +16,11 @@ namespace WifiScanner
     public partial class Main : Form
     {
         private WlanClient wlanClient = null;
+        //Цвета каналов;
+        private string[] _colors = { "#FFE4C4", "#6495ED", "#5F9EA0", "#7FFF00", "#00FFFF",
+            "#FFD700", "#FF00FF", "#00FF7F", "#CD5C5C", "#FFA0CC54", "#CC54CC", "#FF0000",
+            "#0000FF", "#DEB887", "#6495ED"
+        };
 
         #region Старт программы *******************************************************************
 
@@ -23,21 +28,16 @@ namespace WifiScanner
         {
             InitializeComponent();
             Control.CheckForIllegalCrossThreadCalls = false;
-            this.listViewAccessPoints.Columns[2].TextAlign = HorizontalAlignment.Center;
-            this.listViewAccessPoints.Columns[3].TextAlign = HorizontalAlignment.Center;
-            this.listViewAccessPoints.Columns[4].TextAlign = HorizontalAlignment.Center;
-            this.listViewAccessPoints.Columns[5].TextAlign = HorizontalAlignment.Center;
-            this.listViewAccessPoints.Columns[6].TextAlign = HorizontalAlignment.Center;
+             listViewAccessPoints.Columns[2].TextAlign = HorizontalAlignment.Center;
+             listViewAccessPoints.Columns[3].TextAlign = HorizontalAlignment.Center;
+             listViewAccessPoints.Columns[4].TextAlign = HorizontalAlignment.Center;
+             listViewAccessPoints.Columns[5].TextAlign = HorizontalAlignment.Center;
+             listViewAccessPoints.Columns[6].TextAlign = HorizontalAlignment.Center;
         }
 
         private void FormScanner_Load(object sender, EventArgs e)
         {
             wlanClient = new WlanClient();
-
-            ////Taskbar.SetState(this.Handle, Taskbar.TaskbarStates.Indeterminate);
-
-            //this.listViewAccessPoints.ListViewItemSorter = new ListViewColumnSorter();
-            //this.listViewAccessPoints.ColumnClick += new ColumnClickEventHandler(ListViewHelper.ListView_ColumnClick);
         }
 
         private void FormScanner_Shown(object sender, EventArgs e)
@@ -46,6 +46,7 @@ namespace WifiScanner
 
             try {
                 Scan();
+                timer1.Start();
             } catch (Exception ex) {
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -57,25 +58,6 @@ namespace WifiScanner
 
         #region Сканирование сетей ****************************************************************
 
-        ////private void ScanRegister()
-        ////{
-        ////    listViewAccessPoints.Items.Clear();
-
-        ////    foreach (WlanClient.WlanInterface wlanInterface in wlanClient.Interfaces) {
-        ////        Wlan.WlanAvailableNetwork[] networks =
-        ////            wlanInterface.GetAvailableNetworkList(Wlan.WlanGetAvailableNetworkFlags.IncludeAllAdhocProfiles
-        ////            | Wlan.WlanGetAvailableNetworkFlags.IncludeAllManualHiddenProfiles);
-        ////        Wlan.WlanBssEntry[] wlanBssEntries = wlanInterface.GetNetworkBssList();
-
-        ////        wlanInterface.WlanNotification +=
-        ////            new WlanClient.WlanInterface.WlanNotificationEventHandler(Wlan_Notification);
-
-        ////        this.NetworkList(networks, wlanBssEntries);
-        ////    }
-        ////    pictureBox1.Invalidate();
-
-        ////}
-
         private void Scan()
         {
             listViewAccessPoints.Items.Clear();
@@ -85,7 +67,7 @@ namespace WifiScanner
                                                                                               Wlan.WlanGetAvailableNetworkFlags.IncludeAllManualHiddenProfiles);
                 Wlan.WlanBssEntry[] wlanBssEntries = wlanInterface.GetNetworkBssList();
 
-                this.NetworkList(networks, wlanBssEntries);
+                 NetworkList(networks, wlanBssEntries);
             }
             pictureBox1.Invalidate();
 
@@ -100,22 +82,22 @@ namespace WifiScanner
                                            where GetProfileName(bs.dot11Ssid).Trim() == GetProfileName(network.dot11Ssid).Trim()
                                            select bs).FirstOrDefault<Wlan.WlanBssEntry>();
 
-                this.AddToList(network, entry);
+                 AddToList(network, entry);
             }
         }
 
         private void AddToList(Wlan.WlanAvailableNetwork network, Wlan.WlanBssEntry entry)
         {
-            foreach (ListViewItem lvi in this.listViewAccessPoints.Items) {
-                if (lvi.SubItems[1].Text == this.GetMacAddress(entry.dot11Bssid)) {
+            foreach (ListViewItem lvi in  listViewAccessPoints.Items) {
+                if (lvi.SubItems[1].Text ==  GetMacAddress(entry.dot11Bssid)) {
                     return;
                 }
             }
 
-            var wifiItem = new ListViewItem(this.GetProfileName(network.dot11Ssid));
+            var wifiItem = new ListViewItem( GetProfileName(network.dot11Ssid));
 
             // MAC Address
-            wifiItem.SubItems.Add(this.GetMacAddress(entry.dot11Bssid));
+            wifiItem.SubItems.Add( GetMacAddress(entry.dot11Bssid));
 
             // Signal Quality
             wifiItem.SubItems.Add(string.Format("{0}", network.wlanSignalQuality.ToString()));
@@ -126,7 +108,7 @@ namespace WifiScanner
             //ChartValueDbm = (int)entry.rssi * -1;
 
             // Channel No
-            wifiItem.SubItems.Add(this.GetChannel(entry).ToString());
+            wifiItem.SubItems.Add( GetChannel(entry).ToString());
             //ChartChannelX = GetChannel(entry);
 
             // Encryption
@@ -142,12 +124,6 @@ namespace WifiScanner
 
             listViewAccessPoints.Items.Add(wifiItem);
         }
-
-        ////private void ResetList(bool reset)
-        ////{
-        ////    if (reset) listViewAccessPoints.Items.Clear();
-        ////    listViewAccessPoints.Refresh();
-        ////}
 
         #endregion
 
@@ -183,40 +159,6 @@ namespace WifiScanner
                 return -1;
         }
 
-        ////private void ShowProgress(int value, int max, Taskbar.TaskbarStates status)
-        ////{
-        ////    if (status == Taskbar.TaskbarStates.NoProgress) {
-        ////        Taskbar.SetState(this.Handle, Taskbar.TaskbarStates.NoProgress);
-        ////        return;
-        ////    }
-
-        ////    Taskbar.SetValue(this.Handle, value, max);
-        ////    Taskbar.SetState(this.Handle, status);
-        ////}
-
-        private void Wlan_Notification(Wlan.WlanNotificationData notifyData)
-        {
-            switch (notifyData.notificationSource) {
-                case Wlan.WlanNotificationSource.ACM:
-                    switch ((Wlan.WlanNotificationCodeAcm)notifyData.NotificationCode) {
-                        case Wlan.WlanNotificationCodeAcm.ScanComplete:
-
-                            this.Cursor = Cursors.WaitCursor;
-
-                            try {
-                                this.Scan();
-                            } catch (Exception ex) {
-                                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            }
-
-                            this.Cursor = Cursors.Default;
-
-                            break;
-                    }
-                    break;
-            }
-        }
-
         #endregion
 
         #region Рисование графика каналов *********************************************************
@@ -244,8 +186,6 @@ namespace WifiScanner
             var axisMinorPen = new Pen(ColorTranslator.FromHtml("#FF909090"), 1) {
                 DashStyle = DashStyle.DashDotDot
             };
-            // Карандаш для дуги
-            var arcPen = new Pen(Color.Orange, 1);
 
 
             // Смещение осей графика относительно размеров pictureBox1
@@ -295,10 +235,14 @@ namespace WifiScanner
 
             #endregion
             for (int i = 0; i < listViewAccessPoints.Items.Count; i++) {
-                // Начало по Х
+                var color = ColorTranslator.FromHtml(_colors[Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[4].Text)]);
+                // Карандаш для дуги
+                var arcPen = new Pen(color, 1);
+
+                // Начало по Х (№ канала - 2)
                 int startArcX = (int)((axisMinorXstep * (Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[4].Text) - 2)) + axisShift);
                 // Высота дуги
-                float heightArc = (arcYstep * Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[2].Text));
+                float heightArc = (arcYstep * Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[2].Text)) + axisShift;
                 float startArcY = (graphicsHeight - heightArc);
 
                 // Точки линии Бизье
@@ -309,10 +253,16 @@ namespace WifiScanner
 
                 // Рисуем дугу
                 e.Graphics.DrawBezier(arcPen, start, control1, control2, end);
+                // Метка дуги
+                e.Graphics.DrawString(listViewAccessPoints.Items[i].SubItems[0].Text, drawFontSsid, drawBrush, startArcX + (widthArc / 2) - 20, startArcY, drawFormat);
             }
         }
 
         #endregion
 
+        private void Timer1_Tick(object sender, EventArgs e)
+        {
+            Scan();
+        }
     }
 }
