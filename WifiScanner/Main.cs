@@ -5,6 +5,7 @@ using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,11 +17,23 @@ namespace WifiScanner
     public partial class Main : Form
     {
         private WlanClient wlanClient = null;
+
         //Цвета каналов;
         private string[] _colors = { "#FFE4C4", "#6495ED", "#5F9EA0", "#7FFF00", "#00FFFF",
             "#FFD700", "#FF00FF", "#00FF7F", "#CD5C5C", "#FFA0CC54", "#CC54CC", "#FF0000",
             "#0000FF", "#DEB887", "#6495ED"
         };
+
+        // Флаг остановки таймера
+        private bool freeze;
+
+        // Список адаптеров
+        private NetworkInterface[] adaptersList;
+
+        // Промежуточные данные для подсчета скорости соедиения
+        private double lastSent = 0;
+
+        private double lastReceived = 0;
 
         #region Старт программы *******************************************************************
 
@@ -28,11 +41,13 @@ namespace WifiScanner
         {
             InitializeComponent();
             Control.CheckForIllegalCrossThreadCalls = false;
-             listViewAccessPoints.Columns[2].TextAlign = HorizontalAlignment.Center;
-             listViewAccessPoints.Columns[3].TextAlign = HorizontalAlignment.Center;
-             listViewAccessPoints.Columns[4].TextAlign = HorizontalAlignment.Center;
-             listViewAccessPoints.Columns[5].TextAlign = HorizontalAlignment.Center;
-             listViewAccessPoints.Columns[6].TextAlign = HorizontalAlignment.Center;
+            // Исправление мигания ListView
+            listViewAccessPoints.DoubleBuffered(true);
+            listViewAccessPoints.Columns[2].TextAlign = HorizontalAlignment.Center;
+            listViewAccessPoints.Columns[3].TextAlign = HorizontalAlignment.Center;
+            listViewAccessPoints.Columns[4].TextAlign = HorizontalAlignment.Center;
+            listViewAccessPoints.Columns[5].TextAlign = HorizontalAlignment.Center;
+            listViewAccessPoints.Columns[6].TextAlign = HorizontalAlignment.Center;
         }
 
         private void FormScanner_Load(object sender, EventArgs e)
@@ -44,71 +59,145 @@ namespace WifiScanner
         {
             Cursor = Cursors.WaitCursor;
 
-            try {
+            try
+            {
+                GetAdapters();
                 Scan();
                 timer1.Start();
-            } catch (Exception ex) {
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "On Show Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
             Cursor = Cursors.Default;
         }
 
-        #endregion
+        // Поверх остальных окон
+        private void OnTopMenuItem_Click(object sender, EventArgs e)
+        {
+            if (TopMost)
+            {
+                TopMost = false;
+                OnTopMenuItem.Checked = false;
+            }
+            else
+            {
+                TopMost = true;
+                OnTopMenuItem.Checked = true;
+            }
+        }
+
+        #endregion Старт программы *******************************************************************
+
+        #region Timer Options *********************************************************************
+
+        private void Timer1_Tick(object sender, EventArgs e)
+        {
+            Scan();
+        }
+
+        private void FreezeMenuItem_Click(object sender, EventArgs e)
+        {
+            if (!freeze)
+            {
+                timer1.Stop();
+                freeze = true;
+                FreezeMenuItem.Text = "Unfreeze";
+            }
+            else
+            {
+                timer1.Start();
+                freeze = false;
+                FreezeMenuItem.Text = "Freeze";
+            }
+        }
+
+        private void ThirtySecMenuItem_Click(object sender, EventArgs e)
+        {
+            timer1.Interval = 500;
+        }
+
+        private void OneMinMenuItem_Click(object sender, EventArgs e)
+        {
+            timer1.Interval = 1000;
+        }
+
+        private void FiveMinMenuItem1_Click(object sender, EventArgs e)
+        {
+            timer1.Interval = 5000;
+        }
+
+        private void TenMinMenuItem2_Click(object sender, EventArgs e)
+        {
+            timer1.Interval = 10000;
+        }
+
+        #endregion Timer Options *********************************************************************
 
         #region Сканирование сетей ****************************************************************
 
         private void Scan()
         {
+            listViewAccessPoints.BeginUpdate();
             listViewAccessPoints.Items.Clear();
 
-            foreach (WlanClient.WlanInterface wlanInterface in wlanClient.Interfaces) {
-                Wlan.WlanAvailableNetwork[] networks = wlanInterface.GetAvailableNetworkList(Wlan.WlanGetAvailableNetworkFlags.IncludeAllAdhocProfiles |
-                                                                                              Wlan.WlanGetAvailableNetworkFlags.IncludeAllManualHiddenProfiles);
+            foreach (WlanClient.WlanInterface wlanInterface in wlanClient.Interfaces)
+            {
+                Wlan.WlanAvailableNetwork[] networks =
+                    wlanInterface.GetAvailableNetworkList(
+                        Wlan.WlanGetAvailableNetworkFlags.IncludeAllAdhocProfiles |
+                              Wlan.WlanGetAvailableNetworkFlags.IncludeAllManualHiddenProfiles);
                 Wlan.WlanBssEntry[] wlanBssEntries = wlanInterface.GetNetworkBssList();
 
-                 NetworkList(networks, wlanBssEntries);
+                NetworkList(networks, wlanBssEntries);
             }
             pictureBox1.Invalidate();
-
+            GetConnectionInfo();
+            listViewAccessPoints.EndUpdate();
         }
 
         private void NetworkList(Wlan.WlanAvailableNetwork[] networks, Wlan.WlanBssEntry[] wlanBssEntries)
         {
-            foreach (Wlan.WlanAvailableNetwork network in networks) {
-                Application.DoEvents();
+            foreach (Wlan.WlanAvailableNetwork network in networks)
+            {
+                // обрабатывает все оконные сообщения и перерисовывает компонент
+                //Application.DoEvents();
 
                 Wlan.WlanBssEntry entry = (from bs in wlanBssEntries
                                            where GetProfileName(bs.dot11Ssid).Trim() == GetProfileName(network.dot11Ssid).Trim()
                                            select bs).FirstOrDefault<Wlan.WlanBssEntry>();
 
-                 AddToList(network, entry);
+                AddToList(network, entry);
             }
         }
 
         private void AddToList(Wlan.WlanAvailableNetwork network, Wlan.WlanBssEntry entry)
         {
-            foreach (ListViewItem lvi in  listViewAccessPoints.Items) {
-                if (lvi.SubItems[1].Text ==  GetMacAddress(entry.dot11Bssid)) {
+            foreach (ListViewItem lvi in listViewAccessPoints.Items)
+            {
+                if (lvi.SubItems[1].Text == GetMacAddress(entry.dot11Bssid))
+                {
                     return;
                 }
             }
 
-            var wifiItem = new ListViewItem( GetProfileName(network.dot11Ssid));
+            var wifiItem = new ListViewItem(GetProfileName(network.dot11Ssid));
 
             // MAC Address
-            wifiItem.SubItems.Add( GetMacAddress(entry.dot11Bssid));
+            wifiItem.SubItems.Add(GetMacAddress(entry.dot11Bssid));
 
             // Signal Quality
             wifiItem.SubItems.Add(string.Format("{0}", network.wlanSignalQuality.ToString()));
-            //ChartValuePercent = (int)network.wlanSignalQuality;
+            sbProgressBar.Value = (int)network.wlanSignalQuality;
+            sbProgressBar.ToolTipText = string.Format("{0}%", network.wlanSignalQuality.ToString());
 
             // dBm Value
             wifiItem.SubItems.Add(string.Format("{0}", entry.rssi.ToString()));
             //ChartValueDbm = (int)entry.rssi * -1;
 
             // Channel No
-            wifiItem.SubItems.Add( GetChannel(entry).ToString());
+            wifiItem.SubItems.Add(GetChannel(entry).ToString());
             //ChartChannelX = GetChannel(entry);
 
             // Encryption
@@ -125,7 +214,7 @@ namespace WifiScanner
             listViewAccessPoints.Items.Add(wifiItem);
         }
 
-        #endregion
+        #endregion Сканирование сетей ****************************************************************
 
         #region Вспомогательные методы ************************************************************
 
@@ -159,13 +248,19 @@ namespace WifiScanner
                 return -1;
         }
 
-        #endregion
+        #endregion Вспомогательные методы ************************************************************
 
         #region Рисование графика каналов *********************************************************
+
+        private void SplitContainer1_SplitterMoved(object sender, SplitterEventArgs e)
+        {
+            pictureBox1.Invalidate();
+        }
 
         private void PictureBox1_Paint(object sender, PaintEventArgs e)
         {
             #region Инициализация графика *********************************************************
+
             // Включаем антиалиасис
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
@@ -176,17 +271,18 @@ namespace WifiScanner
             // Цвет текста
             var drawBrush = new SolidBrush(Color.White);
             // Формат текста
-            var drawFormat = new StringFormat {
+            var drawFormat = new StringFormat
+            {
                 FormatFlags = StringFormatFlags.DisplayFormatControl
             };
 
             // Цвет координатных линий
             var axisXYPen = new Pen(Color.Red, 2);
             // цвет дополнительных линий
-            var axisMinorPen = new Pen(ColorTranslator.FromHtml("#FF909090"), 1) {
+            var axisMinorPen = new Pen(ColorTranslator.FromHtml("#FF909090"), 1)
+            {
                 DashStyle = DashStyle.DashDotDot
             };
-
 
             // Смещение осей графика относительно размеров pictureBox1
             const float axisShift = 20;
@@ -201,17 +297,21 @@ namespace WifiScanner
             // Ширина дуги = 4-м делениям оси Х
             float widthArc = axisMinorXstep * 4;
 
-            #endregion
+            #endregion Инициализация графика *********************************************************
 
             #region Рисием сетку графика **********************************************************
 
             // Рисуем горизонтальные линии (уровень сигнала)
             float y = graphicsHeight;
-            for (int i = 0; i < 10; i++) {
-                if (i == 0) {
+            for (int i = 0; i < 10; i++)
+            {
+                if (i == 0)
+                {
                     // Абцисса X, начинаем от фактического 0
                     e.Graphics.DrawLine(axisXYPen, 0, y, graphicsWidth + axisShift, y);
-                } else {
+                }
+                else
+                {
                     // Доюолнительные линиии
                     e.Graphics.DrawLine(axisMinorPen, axisShift, y, graphicsWidth + axisShift, y);
                     // Метки линий (10%, 20% ...)
@@ -222,19 +322,25 @@ namespace WifiScanner
 
             // Рисуем горизонтальные линии (номер канала)
             float x = axisShift;
-            for (int i = 0; i < 16; i++) {
-                if (i == 0) {
+            for (int i = 0; i < 16; i++)
+            {
+                if (i == 0)
+                {
                     // Абцисса Y, начинаем от фактического 0
                     e.Graphics.DrawLine(axisXYPen, x, 0, x, graphicsHeight + axisShift);
-                } else {
+                }
+                else
+                {
                     e.Graphics.DrawLine(axisMinorPen, x, graphicsHeight, x, 0);
                     e.Graphics.DrawString(i.ToString(), drawFont, drawBrush, x - 3, graphicsHeight + 5, drawFormat);
                 }
                 x += axisMinorXstep;
             }
 
-            #endregion
-            for (int i = 0; i < listViewAccessPoints.Items.Count; i++) {
+            #endregion Рисием сетку графика **********************************************************
+
+            for (int i = 0; i < listViewAccessPoints.Items.Count; i++)
+            {
                 var color = ColorTranslator.FromHtml(_colors[Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[4].Text)]);
                 // Карандаш для дуги
                 var arcPen = new Pen(color, 1);
@@ -253,16 +359,95 @@ namespace WifiScanner
 
                 // Рисуем дугу
                 e.Graphics.DrawBezier(arcPen, start, control1, control2, end);
+
                 // Метка дуги
-                e.Graphics.DrawString(listViewAccessPoints.Items[i].SubItems[0].Text, drawFontSsid, drawBrush, startArcX + (widthArc / 2) - 20, startArcY, drawFormat);
+                var ssid = listViewAccessPoints.Items[i].SubItems[0].Text;
+                //? Коофициентт для размещения текста по центру дуги
+                var koff = (widthArc - (ssid.Length * 6)) / 2;
+
+                e.Graphics.DrawString(ssid, drawFontSsid, drawBrush, startArcX + (float)koff, startArcY, drawFormat);
             }
         }
 
-        #endregion
+        #endregion Рисование графика каналов *********************************************************
 
-        private void Timer1_Tick(object sender, EventArgs e)
+        #region Информация о текущем соединении ***************************************************
+
+        // Список доступных адаптеров Windows
+        private void GetAdapters()
         {
-            Scan();
+            // Имя используемого адаптера
+            string currentAdapter = "";
+            // Ищем активный адаптер
+            foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus == OperationalStatus.Up
+                    && ni.NetworkInterfaceType != NetworkInterfaceType.Tunnel
+                    && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                {
+                    currentAdapter = (ni.Name);
+                }
+            }
+            // Получаем все локальные интерфейсы компьютера
+            adaptersList = NetworkInterface.GetAllNetworkInterfaces();
+            bool selected = false;
+            // Добавляем имя интерфейса в поле со списком
+            for (int i = 0; i < adaptersList.Length; i++)
+            {
+                cbAdaptersList.Items.Add(adaptersList[i].Name);
+                // Выбираем активный адаптер
+                if (currentAdapter.Equals(adaptersList[i].Name))
+                {
+                    cbAdaptersList.SelectedIndex = i;
+                    selected = true;
+                }
+            }
+            // Если нет активных, то выбираем первый из списка
+            if (!selected)
+                cbAdaptersList.SelectedIndex = 0;
         }
+
+        // Информация о текущем соединении
+        private void GetConnectionInfo()
+        {
+            NetworkInterface nic = null;
+            try
+            {
+                // Выбираем активный адаптер
+                nic = adaptersList[cbAdaptersList.SelectedIndex];
+            }
+            catch
+            {
+                GetAdapters();
+            }
+            // Статистика адаптера
+            IPv4InterfaceStatistics interfaceStats = nic.GetIPv4Statistics();
+
+            // Подсчет текущей скорости
+            int bytesSentSpeed = (int)(interfaceStats.BytesSent - lastSent) / 1024;
+            int bytesReceivedSpeed = (int)(interfaceStats.BytesReceived - lastReceived) / 1024;
+
+            // Update the labels
+            //? labelSpeed.Text = (nic.Speed/1024).ToString()+" Kb/s";
+            //Тип интерфейса
+            labelType.Text = nic.NetworkInterfaceType.ToString();
+            //Получено данных
+            labelBytesReceived.Text = String.Format(new SizeFormatProvider(), "{0:fs}",
+                interfaceStats.BytesReceived);
+            lastReceived = interfaceStats.BytesReceived;
+            //Отправлено данных
+            labelBytesSent.Text = String.Format(new SizeFormatProvider(), "{0:fs}",
+                interfaceStats.BytesSent);
+            lastSent = interfaceStats.BytesSent;
+            //Скорость приема
+            labelUpload.Text = bytesSentSpeed.ToString() + " KB/s";
+            //Скорость отдачи
+            labelDownload.Text = bytesReceivedSpeed.ToString() + " KB/s";
+            //Трафик за все время соединения
+            labelTotal.Text = String.Format(new SizeFormatProvider(), "{0:fs}",
+                interfaceStats.BytesReceived + interfaceStats.BytesSent);
+        }
+
+        #endregion Информация о текущем соединении ***************************************************
     }
 }
