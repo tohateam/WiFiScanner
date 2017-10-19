@@ -1,14 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using WiFiScanner;
 
@@ -29,6 +26,8 @@ namespace WifiScanner
 
         // Список адаптеров
         private NetworkInterface[] adaptersList;
+
+        private string currentMac;
 
         // Промежуточные данные для подсчета скорости соедиения
         private double lastSent = 0;
@@ -59,14 +58,11 @@ namespace WifiScanner
         {
             Cursor = Cursors.WaitCursor;
 
-            try
-            {
+            try {
                 GetAdapters();
                 Scan();
                 timer1.Start();
-            }
-            catch (Exception ex)
-            {
+            } catch (Exception ex) {
                 MessageBox.Show(ex.Message, "On Show Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
@@ -76,19 +72,16 @@ namespace WifiScanner
         // Поверх остальных окон
         private void OnTopMenuItem_Click(object sender, EventArgs e)
         {
-            if (TopMost)
-            {
+            if (TopMost) {
                 TopMost = false;
                 OnTopMenuItem.Checked = false;
-            }
-            else
-            {
+            } else {
                 TopMost = true;
                 OnTopMenuItem.Checked = true;
             }
         }
 
-        #endregion Старт программы *******************************************************************
+        #endregion
 
         #region Timer Options *********************************************************************
 
@@ -99,14 +92,11 @@ namespace WifiScanner
 
         private void FreezeMenuItem_Click(object sender, EventArgs e)
         {
-            if (!freeze)
-            {
+            if (!freeze) {
                 timer1.Stop();
                 freeze = true;
                 FreezeMenuItem.Text = "Unfreeze";
-            }
-            else
-            {
+            } else {
                 timer1.Start();
                 freeze = false;
                 FreezeMenuItem.Text = "Freeze";
@@ -133,37 +123,34 @@ namespace WifiScanner
             timer1.Interval = 10000;
         }
 
-        #endregion Timer Options *********************************************************************
+        #endregion Timer Options
 
         #region Сканирование сетей ****************************************************************
 
         private void Scan()
         {
-            listViewAccessPoints.BeginUpdate();
             listViewAccessPoints.Items.Clear();
 
-            foreach (WlanClient.WlanInterface wlanInterface in wlanClient.Interfaces)
-            {
+            foreach (WlanClient.WlanInterface wlanInterface in wlanClient.Interfaces) {
                 Wlan.WlanAvailableNetwork[] networks =
                     wlanInterface.GetAvailableNetworkList(
                         Wlan.WlanGetAvailableNetworkFlags.IncludeAllAdhocProfiles |
                               Wlan.WlanGetAvailableNetworkFlags.IncludeAllManualHiddenProfiles);
                 Wlan.WlanBssEntry[] wlanBssEntries = wlanInterface.GetNetworkBssList();
 
+                if (wlanInterface.CurrentConnection.isState.ToString().Equals("Connected")) {
+                    currentMac = GetMacAddress(wlanInterface.CurrentConnection.wlanAssociationAttributes.dot11Bssid);
+                }
+
                 NetworkList(networks, wlanBssEntries);
             }
             pictureBox1.Invalidate();
             GetConnectionInfo();
-            listViewAccessPoints.EndUpdate();
         }
 
         private void NetworkList(Wlan.WlanAvailableNetwork[] networks, Wlan.WlanBssEntry[] wlanBssEntries)
         {
-            foreach (Wlan.WlanAvailableNetwork network in networks)
-            {
-                // обрабатывает все оконные сообщения и перерисовывает компонент
-                //Application.DoEvents();
-
+            foreach (Wlan.WlanAvailableNetwork network in networks) {
                 Wlan.WlanBssEntry entry = (from bs in wlanBssEntries
                                            where GetProfileName(bs.dot11Ssid).Trim() == GetProfileName(network.dot11Ssid).Trim()
                                            select bs).FirstOrDefault<Wlan.WlanBssEntry>();
@@ -174,10 +161,8 @@ namespace WifiScanner
 
         private void AddToList(Wlan.WlanAvailableNetwork network, Wlan.WlanBssEntry entry)
         {
-            foreach (ListViewItem lvi in listViewAccessPoints.Items)
-            {
-                if (lvi.SubItems[1].Text == GetMacAddress(entry.dot11Bssid))
-                {
+            foreach (ListViewItem lvi in listViewAccessPoints.Items) {
+                if (lvi.SubItems[1].Text == GetMacAddress(entry.dot11Bssid)) {
                     return;
                 }
             }
@@ -192,29 +177,34 @@ namespace WifiScanner
             sbProgressBar.Value = (int)network.wlanSignalQuality;
             sbProgressBar.ToolTipText = string.Format("{0}%", network.wlanSignalQuality.ToString());
 
-            // dBm Value
+            // Signal Strength
             wifiItem.SubItems.Add(string.Format("{0}", entry.rssi.ToString()));
-            //ChartValueDbm = (int)entry.rssi * -1;
+            // // смена знака
 
             // Channel No
             wifiItem.SubItems.Add(GetChannel(entry).ToString());
-            //ChartChannelX = GetChannel(entry);
-
             // Encryption
             wifiItem.SubItems.Add(network.dot11DefaultCipherAlgorithm.ToString());
             // Authentication
             wifiItem.SubItems.Add(network.dot11DefaultAuthAlgorithm.ToString());
-
-            int range = ((int)network.wlanSignalQuality - 1) / 25;
-            wifiItem.ImageIndex = range;
+            wifiItem.ImageIndex = ((int)network.wlanSignalQuality - 1) / 25;
 
             if (network.dot11DefaultCipherAlgorithm.ToString().Equals("None"))
                 wifiItem.BackColor = Color.LimeGreen;
 
             listViewAccessPoints.Items.Add(wifiItem);
+
+            if (currentMac.Equals(GetMacAddress(entry.dot11Bssid))) {
+                labelSsid.Text = GetProfileName(network.dot11Ssid);
+                labelMac.Text = GetMacAddress(entry.dot11Bssid);
+                labelQuality.Text = string.Format("{0}%", network.wlanSignalQuality.ToString());
+                labelChannel.Text = GetChannel(entry).ToString();
+                cpbStrength.Value = 100 - ((int)entry.rssi * -1);
+                cpbStrength.LabelValue = entry.rssi.ToString();
+            }
         }
 
-        #endregion Сканирование сетей ****************************************************************
+        #endregion
 
         #region Вспомогательные методы ************************************************************
 
@@ -233,7 +223,7 @@ namespace WifiScanner
 
             str[str.Length - 1] = str[str.Length - 1].Remove(2, 1);
 
-            return string.Join("", str);
+            return string.Concat(str);
         }
 
         private int GetChannel(Wlan.WlanBssEntry value)
@@ -248,7 +238,7 @@ namespace WifiScanner
                 return -1;
         }
 
-        #endregion Вспомогательные методы ************************************************************
+        #endregion Вспомогательные методы
 
         #region Рисование графика каналов *********************************************************
 
@@ -271,16 +261,14 @@ namespace WifiScanner
             // Цвет текста
             var drawBrush = new SolidBrush(Color.White);
             // Формат текста
-            var drawFormat = new StringFormat
-            {
+            var drawFormat = new StringFormat {
                 FormatFlags = StringFormatFlags.DisplayFormatControl
             };
 
             // Цвет координатных линий
             var axisXYPen = new Pen(Color.Red, 2);
             // цвет дополнительных линий
-            var axisMinorPen = new Pen(ColorTranslator.FromHtml("#FF909090"), 1)
-            {
+            var axisMinorPen = new Pen(ColorTranslator.FromHtml("#FF909090"), 1) {
                 DashStyle = DashStyle.DashDotDot
             };
 
@@ -297,21 +285,17 @@ namespace WifiScanner
             // Ширина дуги = 4-м делениям оси Х
             float widthArc = axisMinorXstep * 4;
 
-            #endregion Инициализация графика *********************************************************
+            #endregion
 
             #region Рисием сетку графика **********************************************************
 
             // Рисуем горизонтальные линии (уровень сигнала)
             float y = graphicsHeight;
-            for (int i = 0; i < 10; i++)
-            {
-                if (i == 0)
-                {
+            for (int i = 0; i < 10; i++) {
+                if (i == 0) {
                     // Абцисса X, начинаем от фактического 0
                     e.Graphics.DrawLine(axisXYPen, 0, y, graphicsWidth + axisShift, y);
-                }
-                else
-                {
+                } else {
                     // Доюолнительные линиии
                     e.Graphics.DrawLine(axisMinorPen, axisShift, y, graphicsWidth + axisShift, y);
                     // Метки линий (10%, 20% ...)
@@ -322,33 +306,31 @@ namespace WifiScanner
 
             // Рисуем горизонтальные линии (номер канала)
             float x = axisShift;
-            for (int i = 0; i < 16; i++)
-            {
-                if (i == 0)
-                {
+            for (int i = 0; i < 16; i++) {
+                if (i == 0) {
                     // Абцисса Y, начинаем от фактического 0
                     e.Graphics.DrawLine(axisXYPen, x, 0, x, graphicsHeight + axisShift);
-                }
-                else
-                {
+                } else {
                     e.Graphics.DrawLine(axisMinorPen, x, graphicsHeight, x, 0);
                     e.Graphics.DrawString(i.ToString(), drawFont, drawBrush, x - 3, graphicsHeight + 5, drawFormat);
                 }
                 x += axisMinorXstep;
             }
 
-            #endregion Рисием сетку графика **********************************************************
+            #endregion
 
-            for (int i = 0; i < listViewAccessPoints.Items.Count; i++)
-            {
-                var color = ColorTranslator.FromHtml(_colors[Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[4].Text)]);
+            for (int i = 0; i < listViewAccessPoints.Items.Count; i++) {
+                var color = ColorTranslator.FromHtml(_colors[Convert
+                    .ToInt32(listViewAccessPoints.Items[i].SubItems[4].Text)]);
                 // Карандаш для дуги
                 var arcPen = new Pen(color, 1);
 
                 // Начало по Х (№ канала - 2)
-                int startArcX = (int)((axisMinorXstep * (Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[4].Text) - 2)) + axisShift);
+                int startArcX = (int)((axisMinorXstep * (Convert
+                    .ToInt32(listViewAccessPoints.Items[i].SubItems[4].Text) - 2)) + axisShift);
                 // Высота дуги
-                float heightArc = (arcYstep * Convert.ToInt32(listViewAccessPoints.Items[i].SubItems[2].Text)) + axisShift;
+                float heightArc = (arcYstep * Convert
+                    .ToInt32(listViewAccessPoints.Items[i].SubItems[2].Text)) + axisShift;
                 float startArcY = (graphicsHeight - heightArc);
 
                 // Точки линии Бизье
@@ -369,7 +351,7 @@ namespace WifiScanner
             }
         }
 
-        #endregion Рисование графика каналов *********************************************************
+        #endregion
 
         #region Информация о текущем соединении ***************************************************
 
@@ -379,45 +361,54 @@ namespace WifiScanner
             // Имя используемого адаптера
             string currentAdapter = "";
             // Ищем активный адаптер
-            foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
-            {
+            foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces()) {
                 if (ni.OperationalStatus == OperationalStatus.Up
                     && ni.NetworkInterfaceType != NetworkInterfaceType.Tunnel
-                    && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-                {
+                    && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback) {
                     currentAdapter = (ni.Name);
                 }
             }
             // Получаем все локальные интерфейсы компьютера
             adaptersList = NetworkInterface.GetAllNetworkInterfaces();
-            bool selected = false;
+            int selected = 0;
             // Добавляем имя интерфейса в поле со списком
-            for (int i = 0; i < adaptersList.Length; i++)
-            {
+            for (int i = 0; i < adaptersList.Length; i++) {
                 cbAdaptersList.Items.Add(adaptersList[i].Name);
+
                 // Выбираем активный адаптер
-                if (currentAdapter.Equals(adaptersList[i].Name))
-                {
+                if (currentAdapter.Equals(adaptersList[i].Name)) {
                     cbAdaptersList.SelectedIndex = i;
-                    selected = true;
+                    selected = i;
+
+                    //MAC адрес адаптера
+                    PhysicalAddress address = adaptersList[i].GetPhysicalAddress();
+                    byte[] bytes = address.GetAddressBytes();
+                    labelMacAdapter.Text = GetMacAddress(bytes);
+
+                    //IP адресс
+                    //https://stackoverflow.com/questions/13174909/get-ip-address-and-adapter-description-using-c-sharp
+                    var ipProps = adaptersList[i].GetIPProperties();
+                    foreach (var ip in ipProps.UnicastAddresses) {
+                        if ((adaptersList[i].OperationalStatus == OperationalStatus.Up)
+                            && (ip.Address.AddressFamily == AddressFamily.InterNetwork)) {
+                            //Console.Out.WriteLine(ip.Address.ToString() + "|" + adaptersList[i].Description.ToString());
+                            labelIp.Text = ip.Address.ToString();
+                        }
+                    }
                 }
             }
-            // Если нет активных, то выбираем первый из списка
-            if (!selected)
-                cbAdaptersList.SelectedIndex = 0;
+            // Выбираем активный адаптер
+            cbAdaptersList.SelectedIndex = selected;
         }
 
         // Информация о текущем соединении
         private void GetConnectionInfo()
         {
             NetworkInterface nic = null;
-            try
-            {
+            try {
                 // Выбираем активный адаптер
                 nic = adaptersList[cbAdaptersList.SelectedIndex];
-            }
-            catch
-            {
+            } catch {
                 GetAdapters();
             }
             // Статистика адаптера
@@ -448,6 +439,6 @@ namespace WifiScanner
                 interfaceStats.BytesReceived + interfaceStats.BytesSent);
         }
 
-        #endregion Информация о текущем соединении ***************************************************
+        #endregion
     }
 }

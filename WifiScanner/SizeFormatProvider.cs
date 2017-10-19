@@ -11,7 +11,6 @@ namespace WifiScanner
     /// </summary>
     public class SizeFormatProvider : IFormatProvider, ICustomFormatter
     {
-
         public object GetFormat(Type formatType)
         {
             if (formatType == typeof(ICustomFormatter)) return this;
@@ -58,12 +57,11 @@ namespace WifiScanner
             string precision = format.Substring(2);
             if (String.IsNullOrEmpty(precision)) precision = "2";
             return String.Format("{0:N" + precision + "}{1}", size, suffix);
-
         }
 
         private static string DefaultFormat(string format, object arg, IFormatProvider formatProvider)
         {
-            IFormattable formattableArg = arg as IFormattable;
+            var formattableArg = arg as IFormattable;
             if (formattableArg != null) {
                 return formattableArg.ToString(format, formatProvider);
             }
